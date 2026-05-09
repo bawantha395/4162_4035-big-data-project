@@ -33,13 +33,33 @@ start_services() {
   echo "🚀  Starting all services …"
   $COMPOSE -f docker-compose.yml up -d
   echo ""
-  echo "⏳  Waiting 60 seconds for services to stabilise …"
-  sleep 60
+  echo "⏳  Waiting 15 seconds for containers to initialise …"
+  sleep 15
 }
 
 # ── Step 3: Create Kafka topics ───────────────────────────────
 create_kafka_topics() {
-  echo "📌  Creating Kafka topics …"
+  echo "📌  Waiting for Kafka broker to be ready …"
+
+  # Poll until the broker responds (max ~120 s at 5 s intervals)
+  local retries=24
+  local wait=5
+  until docker exec kafka_broker_1 kafka-topics \
+      --list --bootstrap-server kafka_broker_1:19092 \
+      > /dev/null 2>&1; do
+    retries=$((retries - 1))
+    if [ "$retries" -le 0 ]; then
+      echo ""
+      echo "❌  Kafka broker did not become ready in time."
+      echo "     Check broker logs with:"
+      echo "       docker compose logs kafka_broker_1"
+      exit 1
+    fi
+    echo "   Broker not ready yet — retrying in ${wait}s … (${retries} attempts left)"
+    sleep "$wait"
+  done
+
+  echo "✅  Kafka broker is ready. Creating topics …"
 
   docker exec kafka_broker_1 kafka-topics \
     --create --if-not-exists \
@@ -80,7 +100,7 @@ download_spark_jars() {
   curl -fsSL -o "$SPARK_JARS_DIR/commons-pool2-2.11.1.jar" \
     "https://repo1.maven.org/maven2/org/apache/commons/commons-pool2/2.11.1/commons-pool2-2.11.1.jar"
 
-  # Spark token provider (required by Spark 3.4 Kafka integration)
+  # Spark token provider (required by Spark 3.4+ Kafka integration)
   curl -fsSL -o "$SPARK_JARS_DIR/spark-token-provider-kafka-0-10_2.12-${SPARK_VERSION}.jar" \
     "https://repo1.maven.org/maven2/org/apache/spark/spark-token-provider-kafka-0-10_2.12/${SPARK_VERSION}/spark-token-provider-kafka-0-10_2.12-${SPARK_VERSION}.jar"
 
@@ -108,17 +128,14 @@ run_producer() {
 
 # ── Run: Spark fraud detection ────────────────────────────────
 run_spark() {
-  JAR_LIST=$(ls spark/jars/*.jar | xargs -I{} docker exec spark_master ls /opt/spark/jars/ | \
-    grep "\.jar$" | sed 's|^|/opt/spark/jars/|' | tr '\n' ',' | sed 's/,$//')
-
   echo "⚡  Submitting Spark fraud detection job …"
   docker exec spark_master spark-submit \
     --master local[2] \
     --jars "/opt/spark/jars/kafka-clients-${KAFKA_VERSION}.jar,\
-  /opt/spark/jars/spark-sql-kafka-0-10_2.12-${SPARK_VERSION}.jar,\
-  /opt/spark/jars/postgresql-${POSTGRES_JDBC}.jar,\
-  /opt/spark/jars/commons-pool2-2.11.1.jar,\
-  /opt/spark/jars/spark-token-provider-kafka-0-10_2.12-${SPARK_VERSION}.jar" \
+/opt/spark/jars/spark-sql-kafka-0-10_2.12-${SPARK_VERSION}.jar,\
+/opt/spark/jars/postgresql-${POSTGRES_JDBC}.jar,\
+/opt/spark/jars/commons-pool2-2.11.1.jar,\
+/opt/spark/jars/spark-token-provider-kafka-0-10_2.12-${SPARK_VERSION}.jar" \
     /opt/spark/jobs/spark_fraud_detection.py
 }
 
