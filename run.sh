@@ -9,7 +9,7 @@ set -euo pipefail
 
 COMPOSE="docker compose"
 SPARK_JARS_DIR="spark/jars"
-SPARK_VERSION="3.4"
+SPARK_VERSION="3.5.1"
 KAFKA_VERSION="2.8.1"
 POSTGRES_JDBC="42.7.1"
 
@@ -69,8 +69,8 @@ download_spark_jars() {
   curl -fsSL -o "$SPARK_JARS_DIR/kafka-clients-${KAFKA_VERSION}.jar" \
     "https://repo1.maven.org/maven2/org/apache/kafka/kafka-clients/${KAFKA_VERSION}/kafka-clients-${KAFKA_VERSION}.jar"
 
-  curl -fsSL -o "$SPARK_JARS_DIR/spark-sql-kafka-0-10_2.12-${SPARK_VERSION}.0.jar" \
-    "https://repo1.maven.org/maven2/org/apache/spark/spark-sql-kafka-0-10_2.12/${SPARK_VERSION}.0/spark-sql-kafka-0-10_2.12-${SPARK_VERSION}.0.jar"
+  curl -fsSL -o "$SPARK_JARS_DIR/spark-sql-kafka-0-10_2.12-${SPARK_VERSION}.jar" \
+    "https://repo1.maven.org/maven2/org/apache/spark/spark-sql-kafka-0-10_2.12/${SPARK_VERSION}/spark-sql-kafka-0-10_2.12-${SPARK_VERSION}.jar"
 
   # PostgreSQL JDBC driver
   curl -fsSL -o "$SPARK_JARS_DIR/postgresql-${POSTGRES_JDBC}.jar" \
@@ -81,8 +81,8 @@ download_spark_jars() {
     "https://repo1.maven.org/maven2/org/apache/commons/commons-pool2/2.11.1/commons-pool2-2.11.1.jar"
 
   # Spark token provider (required by Spark 3.4 Kafka integration)
-  curl -fsSL -o "$SPARK_JARS_DIR/spark-token-provider-kafka-0-10_2.12-${SPARK_VERSION}.0.jar" \
-    "https://repo1.maven.org/maven2/org/apache/spark/spark-token-provider-kafka-0-10_2.12/${SPARK_VERSION}.0/spark-token-provider-kafka-0-10_2.12-${SPARK_VERSION}.0.jar"
+  curl -fsSL -o "$SPARK_JARS_DIR/spark-token-provider-kafka-0-10_2.12-${SPARK_VERSION}.jar" \
+    "https://repo1.maven.org/maven2/org/apache/spark/spark-token-provider-kafka-0-10_2.12/${SPARK_VERSION}/spark-token-provider-kafka-0-10_2.12-${SPARK_VERSION}.jar"
 
   echo "✅  JARs downloaded to $SPARK_JARS_DIR/"
   ls -lh "$SPARK_JARS_DIR/"
@@ -91,9 +91,10 @@ download_spark_jars() {
 # ── Step 5: Copy Spark job into container ─────────────────────
 deploy_spark_job() {
   echo "📤  Copying Spark job into spark_master container …"
-  docker cp spark/spark_fraud_detection.py spark_master:/opt/bitnami/spark/jobs/
+  docker exec spark_master mkdir -p /opt/spark/jobs /opt/spark/jars
+  docker cp spark/spark_fraud_detection.py spark_master:/opt/spark/jobs/
   for jar in spark/jars/*.jar; do
-    docker cp "$jar" spark_master:/opt/bitnami/spark/jars/
+    docker cp "$jar" spark_master:/opt/spark/jars/
   done
   echo "✅  Spark job deployed."
 }
@@ -107,18 +108,18 @@ run_producer() {
 
 # ── Run: Spark fraud detection ────────────────────────────────
 run_spark() {
-  JAR_LIST=$(ls spark/jars/*.jar | xargs -I{} docker exec spark_master ls /opt/bitnami/spark/jars/ | \
-    grep "\.jar$" | sed 's|^|/opt/bitnami/spark/jars/|' | tr '\n' ',' | sed 's/,$//')
+  JAR_LIST=$(ls spark/jars/*.jar | xargs -I{} docker exec spark_master ls /opt/spark/jars/ | \
+    grep "\.jar$" | sed 's|^|/opt/spark/jars/|' | tr '\n' ',' | sed 's/,$//')
 
   echo "⚡  Submitting Spark fraud detection job …"
   docker exec spark_master spark-submit \
     --master local[2] \
-    --jars "/opt/bitnami/spark/jars/kafka-clients-${KAFKA_VERSION}.jar,\
-/opt/bitnami/spark/jars/spark-sql-kafka-0-10_2.12-${SPARK_VERSION}.0.jar,\
-/opt/bitnami/spark/jars/postgresql-${POSTGRES_JDBC}.jar,\
-/opt/bitnami/spark/jars/commons-pool2-2.11.1.jar,\
-/opt/bitnami/spark/jars/spark-token-provider-kafka-0-10_2.12-${SPARK_VERSION}.0.jar" \
-    /opt/bitnami/spark/jobs/spark_fraud_detection.py
+    --jars "/opt/spark/jars/kafka-clients-${KAFKA_VERSION}.jar,\
+  /opt/spark/jars/spark-sql-kafka-0-10_2.12-${SPARK_VERSION}.jar,\
+  /opt/spark/jars/postgresql-${POSTGRES_JDBC}.jar,\
+  /opt/spark/jars/commons-pool2-2.11.1.jar,\
+  /opt/spark/jars/spark-token-provider-kafka-0-10_2.12-${SPARK_VERSION}.jar" \
+    /opt/spark/jobs/spark_fraud_detection.py
 }
 
 # ── Show service URLs ─────────────────────────────────────────
@@ -128,8 +129,8 @@ show_urls() {
   echo "│  Service URLs                                           │"
   echo "├─────────────────────────────────────────────────────────┤"
   echo "│  Kafka UI      → http://localhost:8888                  │"
-  echo "│  Airflow UI    → http://localhost:8085  (admin/admin)   │"
-  echo "│  Spark UI      → http://localhost:8080                  │"
+  echo "│  Airflow UI    → http://localhost:8082  (admin/admin)   │"
+  echo "│  Spark UI      → http://localhost:9090                  │"
   echo "│  PostgreSQL    → localhost:5433  (fraud_admin/...)      │"
   echo "└─────────────────────────────────────────────────────────┘"
   echo ""

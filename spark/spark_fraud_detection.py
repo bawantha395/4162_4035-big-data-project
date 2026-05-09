@@ -20,11 +20,11 @@ Outputs:
 Submit:
   spark-submit \
     --master local[2] \
-    --jars /opt/bitnami/spark/jars/kafka-clients-*.jar,\
-           /opt/bitnami/spark/jars/spark-sql-kafka-0-10_*.jar,\
-           /opt/bitnami/spark/jars/postgresql-*.jar,\
-           /opt/bitnami/spark/jars/commons-pool2-*.jar \
-    /opt/bitnami/spark/jobs/spark_fraud_detection.py
+    --jars /opt/spark/jars/kafka-clients-*.jar,\
+        /opt/spark/jars/spark-sql-kafka-0-10_*.jar,\
+        /opt/spark/jars/postgresql-*.jar,\
+        /opt/spark/jars/commons-pool2-*.jar \
+    /opt/spark/jobs/spark_fraud_detection.py
 ═══════════════════════════════════════════════════════════════════
 """
 
